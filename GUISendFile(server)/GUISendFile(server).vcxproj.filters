@@ -30,6 +30,12 @@
     <ClInclude Include="GUISendFile(server).h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="CMyFunc.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
+    <ClInclude Include="threadFunc.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">

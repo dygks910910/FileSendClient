@@ -2,10 +2,14 @@
 //
 
 #include "stdafx.h"
+#include<Commdlg.h>
+#include<CommCtrl.h>
 #include "GUISendFile(server).h"
-
+#include<thread>
+#include "threadFunc.h"
 #define MAX_LOADSTRING 100
-
+#define ID_BUTTON 10000
+#define IDC_IPADDR 10001
 // 전역 변수:
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
@@ -98,7 +102,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
 
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+      CW_USEDEFAULT, 0, 600, 300, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
@@ -123,20 +127,77 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	char tempBuff[100];
+	static char pcForSaveFilename[1000];
+	//---------------------------------프로그래스바 전용 변수
+	INITCOMMONCONTROLSEX initCtrlSex;
+	initCtrlSex.dwSize = sizeof(INITCOMMONCONTROLSEX);
+	initCtrlSex.dwICC = ICC_PROGRESS_CLASS|ICC_INTERNET_CLASSES;
+	static HWND h_ProgressbarCtrl;
+	InitCommonControlsEx(&initCtrlSex);
+	//---------------------------------프로그래스바 전용 변수
+	
+	//  ----------------------------------------------파일오픈을 위한 공용대화상자변수.
+	char str[100], lpstrFile[100] = "";
+	char filter[] = "Every File(*.*)\0*.*\0 Text File\0*.txt;*.doc\0";
+	static OPENFILENAMEA OFN;
+	memset(&OFN, 0, sizeof(OPENFILENAME));
+	OFN.lStructSize = sizeof(OPENFILENAME);
+	OFN.hwndOwner = hWnd;
+	OFN.lpstrFilter = filter;
+	OFN.lpstrFile = lpstrFile;
+	OFN.nMaxFile = 100;
+	OFN.lpstrInitialDir = "."; // 초기 디렉토리
+	//  ----------------------------------------------파일오픈을 위한 공용대화상자변수.
+
+	//---------------------------------------------IP주소 컨트롤을 위한 변수
+	HWND h_ipAddressCtrl;
+
+	DWORD ipdw;
+	SOCKADDR_IN serverAddr;
+	//---------------------------------------------IP주소 컨트롤을 위한 변수
+	static std::thread* mythread;
     switch (message)
     {
+	case WM_CREATE:
+		h_ProgressbarCtrl = CreateWindowEx(0, PROGRESS_CLASS, NULL, WS_VISIBLE | WS_CHILD, 20, 20,500, 50, hWnd, NULL, hInst, NULL);
+		//SendMessage(h_ProgressbarCtrl, PBM_SETPOS, (WPARAM)40,0); --- 퍼센테이지 채우기.;
+		h_ipAddressCtrl = CreateWindow(WC_IPADDRESS,"", WS_CHILD | WS_OVERLAPPED | WS_VISIBLE, 20,70,300, 30, hWnd, (HMENU)IDC_IPADDR, hInst, 0);
+		CreateWindow(WC_BUTTON, "Send", WS_CHILD | BS_PUSHBUTTON | WS_VISIBLE, 20, 100, 300, 30, hWnd,(HMENU)ID_BUTTON, hInst, 0);
+		// 메세지 보내기 .
+		break;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
             // 메뉴 선택을 구문 분석합니다.
             switch (wmId)
             {
+			case ID_BUTTON:
+				SendMessage(GetDlgItem(hWnd,IDC_IPADDR), IPM_GETADDRESS, 0, (LPARAM)&ipdw);
+				serverAddr.sin_addr.S_un.S_addr = htonl(ipdw);
+				wsprintf(tempBuff, "%s\n,%s", inet_ntoa(serverAddr.sin_addr),pcForSaveFilename);
+
+				if (MessageBox(hWnd, tempBuff, "이정보가 맞음?", MB_YESNO) == IDYES)
+				{
+					//스레드 생성
+					mythread = new std::thread(ThreadFunc, h_ProgressbarCtrl, serverAddr, pcForSaveFilename);
+					//파라미터 : 프로그래스바의 핸들. 입력받은 IP주소,파일이름,
+
+				}
+				break;
             case IDM_ABOUT:
                 DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
                 break;
             case IDM_EXIT:
                 DestroyWindow(hWnd);
                 break;
+			case ID_FILEOPEN:
+				if (GetOpenFileNameA(&OFN) != 0) {
+					//wsprintfA(str, "%s 파일을 여시겠습니까 ?", OFN.lpstrFile);
+					//MessageBox(hWnd, str, "열기 선택", MB_OK);
+					strcpy(pcForSaveFilename, OFN.lpstrFile);
+				}
+				break;
             default:
                 return DefWindowProc(hWnd, message, wParam, lParam);
             }
@@ -151,6 +212,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_DESTROY:
+		mythread->join();
+		delete mythread;
         PostQuitMessage(0);
         break;
     default:
@@ -162,12 +225,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 // 정보 대화 상자의 메시지 처리기입니다.
 INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    UNREFERENCED_PARAMETER(lParam);
+	
+	UNREFERENCED_PARAMETER(lParam);
     switch (message)
     {
     case WM_INITDIALOG:
         return (INT_PTR)TRUE;
-
+	case WM_CREATE:
+		
+		break;
     case WM_COMMAND:
         if (LOWORD(wParam) == IDOK || LOWORD(wParam) == IDCANCEL)
         {
